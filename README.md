@@ -1,71 +1,169 @@
-# Getting Started with Create React App
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# 🚀 Docker End-to-End DevSecOps Project
 
-## Available Scripts
+## 📋 Step-by-Step Instructions
 
-In the project directory, you can run:
+### 🖥️ Step 1: Launch EC2 Instance
+- 💻 Instance Type: `t2.large`
+- 💾 Volume Size: `25GB`
 
-### `npm start`
+### ⚙️ Step 2: Install Jenkins, Git, Docker, and Trivy
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+#### 🔍 Trivy Installation:
+```bash
+wget https://github.com/aquasecurity/trivy/releases/download/v0.18.3/trivy_0.18.3_Linux-64bit.tar.gz
+tar xvf trivy_0.18.3_Linux-64bit.tar.gz
+sudo mv trivy /usr/local/bin/
+export PATH=$PATH:/usr/local/bin/
+source ~/.bashrc
+trivy --version
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+#### 🛠️ Jenkins Installation:
+```bash
+yum install java-17-amazon-corretto -y
+sudo wget -O /etc/yum.repos.d/jenkins.repo \
+    https://pkg.jenkins.io/redhat-stable/jenkins.repo
+sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+yum install jenkins -y
+systemctl start jenkins
+```
 
-### `npm test`
+#### 🔧 Git & Docker Installation:
+```bash
+yum install git docker -y
+systemctl start docker
+chmod 777 /var/run/docker.sock
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+---
 
-### `npm run build`
+### 📦 Step 3: Install Jenkins Plugins
+- 📌 Sonar Scanner
+- 📌 NodeJs
+- 📌 OWASP Dependency Check
+- 📌 Docker Pipeline
+- 📌 Eclipse Temurin Installer Version
+- 📌 Pipeline Stage View
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+---
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### 🔗 Step 4: Plugin Configuration in Jenkins
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+#### 🐳 Setup SonarQube Using Docker:
+```bash
+docker run -d --name sonar -p 9000:9000 sonarqube:lts-community
+```
 
-### `npm run eject`
+🔑 Access Sonar Dashboard:
+- 🌐 URL: `http://<EC2-IP>:9000`
+- 👤 Username: `admin`
+- 🔐 Password: `admin`
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+🛠️ Create a dummy project and generate a security token.
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+#### 🧩 Configure Plugins in Jenkins:
+- ➕ Add credentials → Secret Text → ID: `sonar`
+- ⚙️ Manage Jenkins → Configure System:
+  - Add Sonar Server → Name: `mysonar`
+  - Enable auto-install
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+🛠️ Add Tools:
+- ☕ JDK → Name: `jdk17` → Version: `jdk-17.0.8.1+1`
+- 🟢 NodeJS → Name: `node16` → Version: `NodeJS 16.2.0`
+- 🛡️ Dependency Check → Name: `DP-Check` → Version: `6.5.1`
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+---
 
-## Learn More
+## 🧪 Jenkins Pipeline Script
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```groovy
+pipeline {
+    agent any
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+    tools {
+        jdk 'jdk17'
+        nodejs 'node16'
+    }
 
-### Code Splitting
+    environment {
+        SCANNER_HOME = tool 'mysonar'
+    }
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+    stages {
 
-### Analyzing the Bundle Size
+        stage('🧹 Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+        stage('📥 Checkout Code') {
+            steps {
+                git 'https://github.com/suneelprojects/docker-project.git'
+            }
+        }
 
-### Making a Progressive Web App
+        stage('🔍 SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('mysonar') {
+                    sh '''
+                        ${SCANNER_HOME}/bin/sonar-scanner \
+                        -Dsonar.projectName=zomato \
+                        -Dsonar.projectKey=zomato \
+                        -Dsonar.sources=.
+                    '''
+                }
+            }
+        }
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+        stage('📦 Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
 
-### Advanced Configuration
+        stage('🛡️ OWASP Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'DP-Check'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+        stage('🧪 Trivy FS Scan') {
+            steps {
+                sh 'trivy fs . > trivyfs.txt'
+            }
+        }
 
-### Deployment
+        stage('🏗️ Build Docker Image') {
+            steps {
+                sh 'docker build -t zomato .'
+            }
+        }
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+        stage('🏷️ Tag & 🚀 Push Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker') {
+                        sh 'docker tag zomato hemakumariperumandla/docker-project-may:zomatov1'
+                        sh 'docker push hemakumariperumandla/docker-project-may:zomatov1'
+                    }
+                }
+            }
+        }
 
-### `npm run build` fails to minify
+        stage('🔍 Trivy Image Scan') {
+            steps {
+                sh 'trivy image hemakumariperumandla/docker-project-may:zomatov1'
+            }
+        }
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
-# Zomato-Clone
+        stage('▶️ Run Docker Container') {
+            steps {
+                sh 'docker run -itd --name zomato -p 3000:3000 hemakumariperumandla/docker-project-may:zomatov1'
+            }
+        }
+    }
+}
+```
